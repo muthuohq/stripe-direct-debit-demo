@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, Link } from "react-router-dom";
+import { Button, Card } from "antd";
 import config from "./config";
 
 const SuccessPage: React.FC = () => {
@@ -27,9 +28,19 @@ const SuccessPage: React.FC = () => {
   }, [location.search]);
 
   return (
-    <div style={{ padding: "2rem" }}>
-      <h2>Direct Debit Setup - Success</h2>
-      <p>{status}</p>
+    <div style={{ padding: "2rem", display: "flex", justifyContent: "center" }}>
+      <Card
+        title="Direct Debit Setup - Success"
+        bordered={false}
+        style={{ width: 500, textAlign: "center", backgroundColor: "#f6ffed", borderColor: "#b7eb8f" }}
+      >
+        <p>{status}</p>
+        <Link to="/">
+          <Button type="primary" style={{ marginTop: "16px" }}>
+            Return Home
+          </Button>
+        </Link>
+      </Card>
     </div>
   );
 };

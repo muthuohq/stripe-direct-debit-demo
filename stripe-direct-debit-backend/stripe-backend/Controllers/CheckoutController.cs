@@ -18,7 +18,7 @@ namespace stripe_backend.Controllers
                 var customerOptions = new Stripe.CustomerCreateOptions
                 {
                     Name = "Demo Customer",
-                    Email = "demo@example.com"
+                    Email = "demo@receptionhq.com"
                 };
                 customer = customerService.Create(customerOptions);
                 MandateStore.CustomerId = customer.Id;
