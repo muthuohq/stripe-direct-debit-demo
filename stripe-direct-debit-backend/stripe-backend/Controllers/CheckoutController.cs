@@ -93,45 +93,81 @@ namespace stripe_backend.Controllers
         {
             try
             {
-                // Use stored mandate/payment method if available, else fallback to static demo IDs
-                var paymentMethodId = !string.IsNullOrEmpty(MandateStore.PaymentMethodId)
-                    ? MandateStore.PaymentMethodId
-                    : "pm_demo_static";
-                var mandateId = !string.IsNullOrEmpty(MandateStore.MandateId)
-                    ? MandateStore.MandateId
-                    : "mandate_demo_static";
+                // Validate request
+                if (request.Amount <= 0)
+                {
+                    return BadRequest(new { error = "Amount must be greater than 0" });
+                }
+
+                // Get stored customer ID
                 var customerId = !string.IsNullOrEmpty(MandateStore.CustomerId)
                     ? MandateStore.CustomerId
-                    : "cus_demo_static";
+                    : throw new Exception("No customer found. Please create a mandate first using Setup Intent.");
 
+                Console.WriteLine($"Processing debit for customer: {customerId}, Amount: {request.Amount} {request.Currency}");
+
+                // Fetch the customer's BACS Direct Debit payment methods
+                var paymentMethodService = new Stripe.PaymentMethodService();
+                var paymentMethods = await paymentMethodService.ListAsync(new Stripe.PaymentMethodListOptions
+                {
+                    Customer = customerId,
+                    Type = "bacs_debit"
+                });
+
+                if (paymentMethods.Data.Count == 0)
+                {
+                    return BadRequest(new { error = "No BACS Direct Debit payment method found for this customer. Please create a mandate first." });
+                }
+
+                // Use the most recent BACS Direct Debit payment method
+                var paymentMethod = paymentMethods.Data
+                    .OrderByDescending(pm => pm.Created)
+                    .First();
+
+                Console.WriteLine($"Using payment method: {paymentMethod.Id}");
+
+                // Create PaymentIntent for BACS Direct Debit
                 var options = new Stripe.PaymentIntentCreateOptions
                 {
                     Amount = request.Amount,
-                    Currency = request.Currency,
-                    PaymentMethod = paymentMethodId,
-                    Mandate = mandateId,
+                    Currency = request.Currency.ToLower(),
                     Customer = customerId,
-                    Confirm = true,
-                    AutomaticPaymentMethods = new Stripe.PaymentIntentAutomaticPaymentMethodsOptions
+                    PaymentMethod = paymentMethod.Id,
+                    OffSession = true, // Merchant-initiated payment (no customer present)
+                    Confirm = true, // Automatically confirm the payment
+                    PaymentMethodTypes = new List<string> { "bacs_debit" },
+                    Metadata = new Dictionary<string, string>
                     {
-                        Enabled = true,
-                        AllowRedirects = "never"
+                        { "payment_type", "bacs_direct_debit" },
+                        { "initiated_by", "merchant" }
                     }
                 };
 
                 var service = new Stripe.PaymentIntentService();
                 var paymentIntent = await service.CreateAsync(options);
 
+                Console.WriteLine($"Payment Intent created: {paymentIntent.Id}, Status: {paymentIntent.Status}");
+
                 return Ok(new
                 {
-                    paymentIntent.Id,
-                    UsedPaymentMethod = paymentMethodId,
-                    UsedMandate = mandateId,
-                    UsedCustomer = customerId
+                    success = true,
+                    id = paymentIntent.Id,
+                    status = paymentIntent.Status,
+                    amount = paymentIntent.Amount,
+                    currency = paymentIntent.Currency,
+                    paymentMethodId = paymentMethod.Id,
+                    customerId = customerId,
+                    message = $"BACS Direct Debit payment of {request.Currency.ToUpper()} {(request.Amount / 100.0):F2} initiated successfully."
                 });
+            }
+            catch (Stripe.StripeException stripeEx)
+            {
+                Console.WriteLine($"Stripe error: {stripeEx.Message}");
+                return BadRequest(new { error = $"Payment failed: {stripeEx.Message}" });
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"General error: {ex.Message}");
                 return BadRequest(new { error = ex.Message });
             }
         }
